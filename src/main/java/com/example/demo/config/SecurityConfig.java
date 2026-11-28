@@ -42,7 +42,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/v1/auth/login", "/api/v1/health", "/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers("/api/v1/vehicles/**", "/api/v1/auth/logout", "/api/v1/auth/me").authenticated()
+                        .requestMatchers("/api/v1/vehicles/**", "/api/v1/documents/**", "/api/v1/auth/logout", "/api/v1/auth/me").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

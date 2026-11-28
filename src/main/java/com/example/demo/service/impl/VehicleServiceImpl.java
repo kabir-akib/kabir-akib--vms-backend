@@ -3,16 +3,22 @@ package com.example.demo.service.impl;
 import com.example.demo.dto.request.VehicleCreateRequest;
 import com.example.demo.dto.request.VehicleUpdateRequest;
 import com.example.demo.dto.response.FleetMetricsResponse;
+import com.example.demo.dto.response.PagedResponse;
 import com.example.demo.dto.response.VehicleResponse;
 import com.example.demo.exception.DuplicateResourceException;
 import com.example.demo.exception.DuplicateVehicleNumberException;
+import com.example.demo.exception.InvalidOperationException;
 import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.model.entity.Vehicle;
 import com.example.demo.model.enums.VehicleStatus;
+import com.example.demo.model.enums.VehicleType;
 import com.example.demo.repository.VehicleRepository;
 import com.example.demo.service.VehicleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,6 +92,17 @@ public class VehicleServiceImpl implements VehicleService {
     }
 
     @Override
+    public VehicleResponse updateVehicleStatus(String id, VehicleStatus status) {
+        Vehicle vehicle = vehicleRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle", "id", id));
+
+        vehicle.setStatus(status);
+        Vehicle updated = vehicleRepository.save(vehicle);
+        log.info("Updated vehicle status id={} number={} status={}", updated.getId(), updated.getVehicleNumber(), updated.getStatus());
+        return VehicleResponse.fromEntity(updated);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public VehicleResponse getVehicleById(String id) {
         Vehicle vehicle = vehicleRepository.findById(id)
@@ -105,6 +122,93 @@ public class VehicleServiceImpl implements VehicleService {
         return vehicles.stream()
                 .map(VehicleResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<VehicleResponse> getVehiclesPaginated(
+            int page,
+            int size,
+            String sortBy,
+            String sortDir,
+            String query,
+            String vehicleNumber,
+            String company,
+            VehicleType type,
+            String brand,
+            String model,
+            VehicleStatus status) {
+        if (page < 0) {
+            throw new InvalidOperationException("Page index must not be negative.");
+        }
+        if (size < 1 || size > 100) {
+            throw new InvalidOperationException("Page size must be between 1 and 100.");
+        }
+
+        String resolvedSortBy = (sortBy == null || sortBy.trim().isEmpty()) ? "createdAt" : sortBy.trim();
+        if (!java.util.Set.of("vehicleNumber", "company", "type", "brand", "model", "status", "createdAt")
+                .contains(resolvedSortBy)) {
+            throw new InvalidOperationException("Unsupported sort field: " + resolvedSortBy);
+        }
+
+        String resolvedSortDir = (sortDir == null || sortDir.trim().isEmpty()) ? "desc" : sortDir.trim().toLowerCase();
+        Sort.Direction direction;
+        if ("asc".equals(resolvedSortDir)) {
+            direction = Sort.Direction.ASC;
+        } else if ("desc".equals(resolvedSortDir)) {
+            direction = Sort.Direction.DESC;
+        } else {
+            throw new InvalidOperationException("Invalid sort direction: " + sortDir + ". Use 'asc' or 'desc'.");
+        }
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, resolvedSortBy));
+        Page<VehicleResponse> mappedPage = vehicleRepository.findFilteredVehicles(
+                trimToNull(query),
+                trimToNull(vehicleNumber),
+                trimToNull(company),
+                type,
+                trimToNull(brand),
+                trimToNull(model),
+                status,
+                pageable
+        ).map(VehicleResponse::fromEntity);
+
+        return PagedResponse.fromPage(mappedPage);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<VehicleResponse> searchVehicles(
+            String query,
+            String vehicleNumber,
+            String company,
+            VehicleType type,
+            String brand,
+            String model,
+            VehicleStatus status) {
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+        List<Vehicle> vehicles = vehicleRepository.advancedSearchVehicles(
+                trimToNull(query),
+                trimToNull(vehicleNumber),
+                trimToNull(company),
+                type,
+                trimToNull(brand),
+                trimToNull(model),
+                status,
+                sort
+        );
+
+        return vehicles.stream()
+                .map(VehicleResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     @Override
